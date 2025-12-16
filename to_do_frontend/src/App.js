@@ -10,6 +10,17 @@ import {
 import Header from "./components/Header";
 import TaskInput from "./components/TaskInput";
 import TaskList from "./components/TaskList";
+import Sidebar from "./components/Sidebar";
+
+// Debounce hook to avoid excessive re-renders on search input
+function useDebounced(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
 
 // PUBLIC_INTERFACE
 function App() {
@@ -18,6 +29,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [error, setError] = useState("");
+
+  // UI state: sidebar and filters
+  const [sidebarOpen, setSidebarOpen] = useState(false); // for small screens
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // for desktop
+  const [filter, setFilter] = useState("all");
+
+  // Search state
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounced(search, 200);
 
   // Apply theme to document element
   useEffect(() => {
@@ -33,7 +53,7 @@ function App() {
       .then((data) => {
         if (mounted) setTasks(Array.isArray(data) ? data : []);
       })
-      .catch((e) => {
+      .catch(() => {
         if (mounted) setError(`Could not load tasks from ${apiBaseUrl()}`);
         // Keep empty list when backend is down
       })
@@ -96,8 +116,38 @@ function App() {
     }
   };
 
+  // Filtering logic: by sidebar selection first, then by search
+  const filteredByStatus = useMemo(() => {
+    if (filter === "completed") return tasks.filter((t) => !!t.completed);
+    if (filter === "active") return tasks.filter((t) => !t.completed);
+    return tasks;
+  }, [tasks, filter]);
+
+  const finalTasks = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    if (!q) return filteredByStatus;
+    return filteredByStatus.filter((t) => (t.title || "").toLowerCase().includes(q));
+  }, [filteredByStatus, debouncedSearch]);
+
+  // Responsive: show hamburger in header on small screens (via prop)
+  const handleSidebarToggle = () => setSidebarOpen((s) => !s);
+  const handleCollapseToggle = () => setSidebarCollapsed((c) => !c);
+  const handleSelectFilter = (key) => {
+    setFilter(key === "about" ? "all" : key);
+    setSidebarOpen(false);
+  };
+
   return (
-    <div className="App">
+    <div className={`App ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <Sidebar
+        isOpen={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        onToggleOpen={handleSidebarToggle}
+        onCollapseToggle={handleCollapseToggle}
+        onSelectFilter={handleSelectFilter}
+        activeFilter={filter}
+      />
+
       <button
         className="theme-toggle"
         onClick={toggleTheme}
@@ -106,27 +156,42 @@ function App() {
         {theme === "light" ? "🌙 Dark" : "☀️ Light"}
       </button>
 
-      <Header total={total} completed={completed} />
+      <Header total={total} completed={completed} onSidebarToggle={handleSidebarToggle} />
 
-      <main className="container">
-        <div className="surface">
-          {error && (
-            <div className="alert error" role="alert">
-              {error}
+      <main className="main">
+        <div className="container">
+          <div className="surface">
+            {error && (
+              <div className="alert error" role="alert">
+                {error}
+              </div>
+            )}
+
+            {/* Search bar */}
+            <div className="search-row">
+              <input
+                aria-label="Search tasks"
+                className="search-input"
+                type="search"
+                placeholder="Search tasks by title…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
-          )}
-          <TaskInput onAdd={handleAdd} />
-          {loading ? <p>Loading…</p> : null}
-          <TaskList
-            tasks={tasks}
-            onToggle={handleToggle}
-            onDelete={handleDelete}
-            onUpdate={handleUpdate}
-          />
+
+            <TaskInput onAdd={handleAdd} />
+            {loading ? <p>Loading…</p> : null}
+            <TaskList
+              tasks={finalTasks}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+              onUpdate={handleUpdate}
+            />
+          </div>
+          <footer className="footer">
+            <small className="muted">API: {apiBaseUrl()}</small>
+          </footer>
         </div>
-        <footer className="footer">
-          <small className="muted">API: {apiBaseUrl()}</small>
-        </footer>
       </main>
     </div>
   );
