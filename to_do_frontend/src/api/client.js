@@ -7,6 +7,37 @@ const getBaseUrl = () => {
     "http://localhost:4000";
 };
 
+// Normalize a task object: ensure booleans and ISO strings for date fields
+const normalizeTask = (task) => {
+  if (!task || typeof task !== "object") return task;
+  const normalized = { ...task };
+  // Ensure completed is a boolean
+  if (typeof normalized.completed !== "boolean") {
+    // Convert typical truthy/falsey strings/numbers to boolean
+    normalized.completed = normalized.completed === true ||
+      normalized.completed === 1 ||
+      normalized.completed === "1" ||
+      normalized.completed === "true";
+  }
+  // Normalize common date fields if present
+  ["createdAt", "updatedAt", "completedAt", "dueDate"].forEach((key) => {
+    if (normalized[key]) {
+      const d = new Date(normalized[key]);
+      if (!isNaN(d.getTime())) {
+        normalized[key] = d.toISOString();
+      }
+    }
+  });
+  return normalized;
+};
+
+// Normalize arrays of tasks
+const normalizeTasks = (data) => {
+  if (Array.isArray(data)) return data.map(normalizeTask);
+  if (data && typeof data === "object") return normalizeTask(data);
+  return data;
+};
+
 // PUBLIC_INTERFACE
 export function apiBaseUrl() {
   /** Returns the API base URL used by the frontend, resolved from environment variables. */
@@ -15,10 +46,11 @@ export function apiBaseUrl() {
 
 // PUBLIC_INTERFACE
 export async function getTasks() {
-  /** Fetch list of tasks */
+  /** Fetch list of tasks (expects array), normalizes booleans and dates */
   const res = await fetch(`${getBaseUrl()}/api/tasks`);
   if (!res.ok) throw new Error(`Failed to fetch tasks: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return normalizeTasks(data);
 }
 
 // PUBLIC_INTERFACE
@@ -30,7 +62,8 @@ export async function createTask(payload) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Failed to create task: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return normalizeTask(data);
 }
 
 // PUBLIC_INTERFACE
@@ -42,7 +75,8 @@ export async function updateTask(id, payload) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Failed to update task: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return normalizeTask(data);
 }
 
 // PUBLIC_INTERFACE
